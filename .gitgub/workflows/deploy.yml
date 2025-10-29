@@ -1,0 +1,78 @@
+name: Deploy on Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout main branch
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Checkout gh-pages branch
+      uses: actions/checkout@v4
+      with:
+        ref: gh-pages
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: gh-pages
+
+    - name: Prepare version files
+      run: |
+        # Получаем версию релиза
+        VERSION="${{ github.event.release.tag_name }}"
+        if [[ ! $VERSION =~ ^v ]]; then
+          VERSION="v$VERSION"
+        fi
+        
+        # Создаем папку для версии в gh-pages
+        mkdir -p "gh-pages/$VERSION"
+        cp -r *.html ru/ en/ "gh-pages/$VERSION/" 2>/dev/null || true
+        
+        # Обновляем текущую версию в корне gh-pages
+        cd gh-pages
+        rm -rf *.html ru en 2>/dev/null || true
+        cp -r "$VERSION"/* ./
+        
+        # Генерируем страницу версий
+        cat > versions.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Лабораторная работа №4 - Все версии</title>
+        </head>
+        <body>
+            <h1>Лабораторная работа №4</h1>
+            <h3>Все версии:</h3>
+        EOF
+
+        for dir in v*/; do
+          if [ -d "$dir" ]; then
+            version="${dir%/}"
+            version_num="${version#v}"
+            
+            if [ "$version" = "$VERSION" ]; then
+              echo "<div><strong>Version $version_num (текущая)</strong><br>" >> versions.html
+            else
+              echo "<div>Version $version_num<br>" >> versions.html
+            fi
+            
+            echo "<a href='./$version/ru/index.html'>Русская</a> | " >> versions.html
+            echo "<a href='./$version/en/index.html'>English</a></div>" >> versions.html
+          fi
+        done
+
+        echo "</body></html>" >> versions.html
+
+    - name: Deploy to gh-pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./gh-pages
+        force_orphan: true
