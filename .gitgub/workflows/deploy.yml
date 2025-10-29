@@ -7,20 +7,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
-    - name: Checkout main branch
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
-        ref: main
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Checkout gh-pages branch
-      uses: actions/checkout@v4
-      with:
-        ref: gh-pages
-        token: ${{ secrets.GITHUB_TOKEN }}
-        path: gh-pages
+      run: |
+        git fetch origin gh-pages
+        git checkout gh-pages
+        git pull origin gh-pages
 
     - name: Prepare version files
       run: |
@@ -30,17 +30,18 @@ jobs:
           VERSION="v$VERSION"
         fi
         
-        # Создаем папку для версии в gh-pages
-        mkdir -p "gh-pages/$VERSION"
-        cp -r *.html ru/ en/ "gh-pages/$VERSION/" 2>/dev/null || true
+        # Создаем папку для версии и копируем файлы
+        mkdir -p "$VERSION"
+        cp -r *.html ru/ en/ "$VERSION/" || true
         
-        # Обновляем текущую версию в корне gh-pages
-        cd gh-pages
+        # Обновляем текущую версию в корне
         rm -rf *.html ru en 2>/dev/null || true
         cp -r "$VERSION"/* ./
-        
-        # Генерируем страницу версий
-        cat > versions.html << 'EOF'
+
+    - name: Generate versions page
+      run: |
+        # Создаем HTML страницу со списком версий
+        cat > index.html << 'EOF'
         <!DOCTYPE html>
         <html>
         <head>
@@ -49,30 +50,39 @@ jobs:
         </head>
         <body>
             <h1>Лабораторная работа №4</h1>
+            
+            <div>
+                <a href="./ru/index.html">Русская версия</a>
+                <a href="./en/index.html">English version</a>
+            </div>
+
             <h3>Все версии:</h3>
         EOF
 
+        # Добавляем список версий
         for dir in v*/; do
           if [ -d "$dir" ]; then
             version="${dir%/}"
             version_num="${version#v}"
             
             if [ "$version" = "$VERSION" ]; then
-              echo "<div><strong>Version $version_num (текущая)</strong><br>" >> versions.html
+              echo "<div><strong>Version $version_num (текущая)</strong><br>" >> index.html
             else
-              echo "<div>Version $version_num<br>" >> versions.html
+              echo "<div>Version $version_num<br>" >> index.html
             fi
             
-            echo "<a href='./$version/ru/index.html'>Русская</a> | " >> versions.html
-            echo "<a href='./$version/en/index.html'>English</a></div>" >> versions.html
+            echo "<a href='./$version/ru/index.html'>Русская</a> | " >> index.html
+            echo "<a href='./$version/en/index.html'>English</a></div>" >> index.html
           fi
         done
 
-        echo "</body></html>" >> versions.html
+        # Закрываем HTML
+        echo "</body></html>" >> index.html
 
-    - name: Deploy to gh-pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./gh-pages
-        force_orphan: true
+    - name: Commit and deploy
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add .
+        git commit -m "Deploy version ${{ github.event.release.tag_name }}"
+        git push origin gh-pages
